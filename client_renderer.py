@@ -182,10 +182,10 @@ class GameRenderer:
         for star_x, star_y, brightness in self.stars:
             pygame.draw.circle(self.screen, (brightness, brightness, brightness), (star_x, star_y), 1)
 
-    def draw_health_bar(self, x, y, hp, max_hp, width=40, height=6, offset_x=0, offset_y=0):
+    def draw_health_bar(self, x, y, hp, max_hp, width=30, height=4, offset_x=0, offset_y=0):
         """Draw health bar above entity (Green line for HP, Red line for background)."""
         bar_x = x - width // 2 + offset_x
-        bar_y = y - 25 + offset_y
+        bar_y = y - 18 + offset_y  # Closer to smaller entity
 
         # Background (red)
         pygame.draw.rect(self.screen, HP_RED, (bar_x, bar_y, width, height))
@@ -198,8 +198,8 @@ class GameRenderer:
         # Border
         pygame.draw.rect(self.screen, WHITE, (bar_x, bar_y, width, height), 1)
 
-    def draw_player(self, x, y, angle, color, size=20, offset_x=0, offset_y=0):
-        """Draw Players using pygame.draw.polygon with screen shake offset."""
+    def draw_player(self, x, y, angle, color, size=12, offset_x=0, offset_y=0):
+        """Draw Players using pygame.draw.polygon with screen shake offset (smaller size)."""
         x += offset_x
         y += offset_y
         angle_rad = math.radians(angle)
@@ -222,17 +222,17 @@ class GameRenderer:
         pygame.draw.polygon(self.screen, WHITE, points, 2)
 
     def draw_npc(self, x, y, angle, hp, max_hp, offset_x=0, offset_y=0):
-        """Draw NPC (Blue Color) with health bar."""
-        self.draw_player(x, y, angle, 'npc', size=18, offset_x=offset_x, offset_y=offset_y)
-        self.draw_health_bar(x, y, hp, max_hp, width=30, height=4, offset_x=offset_x, offset_y=offset_y)
+        """Draw NPC (Blue Color) with health bar (smaller)."""
+        self.draw_player(x, y, angle, 'npc', size=10, offset_x=offset_x, offset_y=offset_y)
+        self.draw_health_bar(x, y, hp, max_hp, width=20, height=3, offset_x=offset_x, offset_y=offset_y)
 
     def draw_boss(self, x, y, angle, hp, max_hp, offset_x=0, offset_y=0):
-        """Draw Boss (Big Purple Color) with large health bar."""
-        self.draw_player(x, y, angle, 'boss', size=40, offset_x=offset_x, offset_y=offset_y)
-        self.draw_health_bar(x, y - 20, hp, max_hp, width=80, height=8, offset_x=offset_x, offset_y=offset_y)
+        """Draw Boss (Purple Color) with health bar (smaller)."""
+        self.draw_player(x, y, angle, 'boss', size=25, offset_x=offset_x, offset_y=offset_y)
+        self.draw_health_bar(x, y - 12, hp, max_hp, width=50, height=6, offset_x=offset_x, offset_y=offset_y)
 
         label = self.font.render("BOSS", True, (255, 100, 255))
-        self.screen.blit(label, (x - 20 + offset_x, y - 55 + offset_y))
+        self.screen.blit(label, (x - 18 + offset_x, y - 38 + offset_y))
 
     def draw_bullet(self, x, y, owner_id='player', offset_x=0, offset_y=0):
         """Draw Bullets with different colors for boss bullets."""
@@ -298,7 +298,7 @@ class GameRenderer:
                 my_hp = hp
                 my_max_hp = max_hp
             label_surface = self.font.render(label, True, WHITE)
-            self.screen.blit(label_surface, (x - 20 + offset_x, y - 40 + offset_y))
+            self.screen.blit(label_surface, (x - 15 + offset_x, y - 30 + offset_y))  # Adjusted for smaller size
 
         # Draw all bullets (with owner info for coloring)
         bullets = game_state.get('bullets', [])

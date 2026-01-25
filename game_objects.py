@@ -3,7 +3,7 @@ import random
 
 
 class Player:
-    HITBOX_RADIUS = 15
+    HITBOX_RADIUS = 10  # Smaller hitbox
 
     def __init__(self, x, y, color, angle=0, speed=0):
         self.x = x
@@ -74,7 +74,7 @@ class Bullet:
 
 class NPC:
     """NPC class that moves automatically towards the nearest player."""
-    HITBOX_RADIUS = 15
+    HITBOX_RADIUS = 10  # Smaller hitbox
 
     def __init__(self, x, y, npc_id):
         self.x = x
@@ -127,7 +127,7 @@ class NPC:
 
 class Boss(NPC):
     """Boss class - larger, slower, more HP than NPC."""
-    HITBOX_RADIUS = 40  # Larger size
+    HITBOX_RADIUS = 25  # Smaller but still larger than players
     ATTACK_INTERVAL = 120  # Frames (2 seconds at 60 FPS)
 
     def __init__(self, x, y, boss_id):
