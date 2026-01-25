@@ -27,6 +27,7 @@ game_state = {
 }
 client_sockets = {}  # {player_id: socket}
 client_inputs = {}   # {player_id: {w, a, s, d, space}}
+frame_events = []    # Events to send to clients this frame
 lock = threading.Lock()
 next_player_id = 0
 next_npc_id = 0
@@ -36,6 +37,16 @@ boss_spawned = False
 
 # Player colors
 COLORS = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'cyan', 'magenta']
+
+
+def add_event(event_type, x, y, color='white'):
+    """Add an event to be sent to clients."""
+    frame_events.append({
+        'type': event_type,
+        'x': x,
+        'y': y,
+        'color': color
+    })
 
 
 def get_total_score():
@@ -97,22 +108,26 @@ def spawn_boss():
 
 
 def handle_collisions():
-    """Handle all collision logic."""
+    """Handle all collision logic with explosion events."""
     bullets_to_remove = []
 
     for bullet in game_state['bullets']:
         # Bullet vs Player collision
         for player_id, player in game_state['players'].items():
-            # Don't hit yourself
+            # Don't hit yourself (players can't hit themselves)
             if bullet.owner_id == player_id:
                 continue
-            # Also don't hit if owner is 'npc' or 'boss' and target is NPC/Boss
             if check_collision(bullet, player):
                 is_dead = player.take_damage(bullet.damage)
                 bullets_to_remove.append(bullet)
+
+                # Add hit event for screen shake
+                add_event('hit', player.x, player.y, player.color)
                 print(f"Player {player_id} hit! HP: {player.hp}")
 
                 if is_dead:
+                    # Add explosion event
+                    add_event('explode', player.x, player.y, player.color)
                     # Respawn player and reset score
                     spawn_x = random.randint(100, SCREEN_WIDTH - 100)
                     spawn_y = random.randint(100, SCREEN_HEIGHT - 100)
@@ -129,6 +144,8 @@ def handle_collisions():
                 bullets_to_remove.append(bullet)
 
                 if is_dead:
+                    # Add explosion event for NPC death
+                    add_event('explode', npc.x, npc.y, 'npc')
                     game_state['npcs'].remove(npc)
                     # Give score to shooter if it's a player
                     if bullet.owner_id in game_state['players']:
@@ -143,6 +160,8 @@ def handle_collisions():
                 bullets_to_remove.append(bullet)
 
                 if is_dead:
+                    # Add big explosion event for Boss death
+                    add_event('explode_big', game_state['boss'].x, game_state['boss'].y, 'boss')
                     # Give score to shooter
                     if bullet.owner_id in game_state['players']:
                         game_state['players'][bullet.owner_id].score += 5
@@ -227,12 +246,15 @@ def handle_client(client_socket, player_id):
 
 def game_loop():
     """Game Loop running at 60 FPS with spawning and collision logic."""
-    global last_npc_spawn
+    global last_npc_spawn, frame_events
 
     while running:
         start_time = time.time()
 
         with lock:
+            # Clear events from previous frame
+            frame_events = []
+
             # === SPAWNING LOGIC ===
             # Spawn NPC every 5 seconds (max 5 NPCs)
             if len(game_state['players']) > 0:
@@ -240,7 +262,7 @@ def game_loop():
                     spawn_npc()
                     last_npc_spawn = time.time()
 
-                # Spawn Boss when total score > 10
+                # Spawn Boss when total score >= 10
                 if get_total_score() >= BOSS_SCORE_THRESHOLD:
                     spawn_boss()
 
@@ -263,15 +285,31 @@ def game_loop():
                 npc.x = max(10, min(SCREEN_WIDTH - 10, npc.x))
                 npc.y = max(10, min(SCREEN_HEIGHT - 10, npc.y))
 
-            # === UPDATE BOSS (move towards nearest player) ===
+            # === UPDATE BOSS ===
             if game_state['boss'] is not None:
-                nearest = find_nearest_player(game_state['boss'].x, game_state['boss'].y)
+                boss = game_state['boss']
+                nearest = find_nearest_player(boss.x, boss.y)
                 if nearest:
-                    game_state['boss'].move_towards_target(nearest.x, nearest.y)
+                    boss.move_towards_target(nearest.x, nearest.y)
 
                 # Keep Boss on screen
-                game_state['boss'].x = max(50, min(SCREEN_WIDTH - 50, game_state['boss'].x))
-                game_state['boss'].y = max(50, min(SCREEN_HEIGHT - 50, game_state['boss'].y))
+                boss.x = max(50, min(SCREEN_WIDTH - 50, boss.x))
+                boss.y = max(50, min(SCREEN_HEIGHT - 50, boss.y))
+
+                # === BOSS ATTACK: Fire 8 bullets every 2 seconds ===
+                if boss.update_attack():
+                    bullet_data_list = boss.get_attack_bullets()
+                    for bdata in bullet_data_list:
+                        bullet = Bullet(
+                            bdata['x'], bdata['y'], bdata['angle'],
+                            owner_id=bdata['owner_id'],
+                            speed=bdata['speed'],
+                            damage=bdata['damage']
+                        )
+                        game_state['bullets'].append(bullet)
+                    # Add boss attack event
+                    add_event('boss_attack', boss.x, boss.y, 'boss')
+                    print("Boss fired!")
 
             # === UPDATE BULLETS ===
             for bullet in game_state['bullets']:
@@ -293,12 +331,13 @@ def game_loop():
                     str(pid): p.get_state() for pid, p in game_state['players'].items()
                 },
                 'bullets': [
-                    (b.x, b.y, b.angle) for b in game_state['bullets']
+                    (b.x, b.y, b.angle, b.owner_id) for b in game_state['bullets']
                 ],
                 'npcs': [
                     npc.get_state() for npc in game_state['npcs']
                 ],
-                'boss': game_state['boss'].get_state() if game_state['boss'] else None
+                'boss': game_state['boss'].get_state() if game_state['boss'] else None,
+                'events': frame_events  # Send events to clients
             }
 
             # Broadcast to all clients
@@ -335,7 +374,7 @@ def start_server():
 
     print("=" * 40)
     print("  MULTIPLAYER DOGFIGHT SERVER")
-    print("  With NPCs and Boss!")
+    print("  With NPCs, Boss Attacks & Effects!")
     print("=" * 40)
     print(f"Server started on {HOST}:{PORT}")
     print(f"NPC spawn interval: {NPC_SPAWN_INTERVAL}s (max {MAX_NPCS})")

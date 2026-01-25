@@ -128,6 +128,7 @@ class NPC:
 class Boss(NPC):
     """Boss class - larger, slower, more HP than NPC."""
     HITBOX_RADIUS = 40  # Larger size
+    ATTACK_INTERVAL = 120  # Frames (2 seconds at 60 FPS)
 
     def __init__(self, x, y, boss_id):
         super().__init__(x, y, boss_id)
@@ -137,6 +138,28 @@ class Boss(NPC):
         self.turn_speed = 1  # Slower turn speed - feels heavy and big
         self.color = 'boss'  # Purple color identifier
         self.shoot_cooldown = 0
+
+    def update_attack(self):
+        """Update attack cooldown. Returns True if ready to fire."""
+        self.shoot_cooldown += 1
+        if self.shoot_cooldown >= self.ATTACK_INTERVAL:
+            self.shoot_cooldown = 0
+            return True
+        return False
+
+    def get_attack_bullets(self):
+        """Fire 8 bullets in all directions (turret pattern)."""
+        bullets = []
+        for angle in range(0, 360, 45):  # 0, 45, 90, 135, 180, 225, 270, 315
+            bullets.append({
+                'x': self.x,
+                'y': self.y,
+                'angle': angle,
+                'owner_id': 'boss',
+                'speed': 6,
+                'damage': 15
+            })
+        return bullets
     # Boss inherits smooth turning from NPC.move_towards_target()
 
 
