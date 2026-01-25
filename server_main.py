@@ -107,8 +107,66 @@ def spawn_boss():
     print("=" * 40)
 
 
+def handle_body_collisions():
+    """Handle Player vs Enemy body collisions (crash damage)."""
+    import math
+
+    for player_id, player in game_state['players'].items():
+        # === Player vs NPC collision ===
+        for npc in game_state['npcs'][:]:
+            if check_collision(player, npc):
+                # Player takes 30 crash damage
+                is_player_dead = player.take_damage(30)
+                add_event('hit', player.x, player.y, player.color)
+                print(f"Player {player_id} crashed into NPC! -30 HP")
+
+                # Kill the NPC immediately
+                add_event('explode', npc.x, npc.y, 'npc')
+                game_state['npcs'].remove(npc)
+                print(f"NPC destroyed by collision!")
+
+                # Check if player died from crash
+                if is_player_dead:
+                    add_event('explode', player.x, player.y, player.color)
+                    spawn_x = random.randint(100, SCREEN_WIDTH - 100)
+                    spawn_y = random.randint(100, SCREEN_HEIGHT - 100)
+                    player.respawn(spawn_x, spawn_y)
+                    print(f"Player {player_id} died from crash and respawned!")
+
+        # === Player vs Boss collision ===
+        if game_state['boss'] is not None:
+            boss = game_state['boss']
+            if check_collision(player, boss):
+                # Player takes 50 massive crash damage
+                is_player_dead = player.take_damage(50)
+                add_event('hit', player.x, player.y, player.color)
+                print(f"Player {player_id} crashed into BOSS! -50 HP")
+
+                # Knockback player away from boss to prevent getting stuck
+                dx = player.x - boss.x
+                dy = player.y - boss.y
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist > 0:
+                    # Push player backwards
+                    knockback_strength = 50
+                    player.x += (dx / dist) * knockback_strength
+                    player.y += (dy / dist) * knockback_strength
+
+                    # Keep player on screen
+                    player.x = max(20, min(SCREEN_WIDTH - 20, player.x))
+                    player.y = max(20, min(SCREEN_HEIGHT - 20, player.y))
+
+                # Check if player died from crash
+                if is_player_dead:
+                    add_event('explode', player.x, player.y, player.color)
+                    spawn_x = random.randint(100, SCREEN_WIDTH - 100)
+                    spawn_y = random.randint(100, SCREEN_HEIGHT - 100)
+                    player.respawn(spawn_x, spawn_y)
+                    print(f"Player {player_id} died from Boss crash and respawned!")
+
+
 def handle_collisions():
-    """Handle all collision logic with explosion events."""
+    """Handle all bullet collision logic with explosion events."""
     bullets_to_remove = []
 
     for bullet in game_state['bullets']:
@@ -322,7 +380,8 @@ def game_loop():
             ]
 
             # === COLLISION LOGIC ===
-            handle_collisions()
+            handle_collisions()        # Bullet collisions
+            handle_body_collisions()   # Player vs Enemy body collisions
 
             # === PREPARE BROADCAST STATE ===
             broadcast_state = {
