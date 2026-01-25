@@ -2,29 +2,158 @@ import socket
 import threading
 import json
 import time
-from game_objects import Player, Bullet
+import random
+from game_objects import Player, Bullet, NPC, Boss, check_collision, get_distance
 
 # Server configuration
 HOST = '0.0.0.0'
-PORT = 21001
+PORT = 9999
 FPS = 60
 FRAME_TIME = 1 / FPS
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 
+# Spawning configuration
+MAX_NPCS = 5
+NPC_SPAWN_INTERVAL = 5  # seconds
+BOSS_SCORE_THRESHOLD = 10
+
 # Game state
 game_state = {
     'players': {},  # {player_id: Player object}
-    'bullets': []   # [Bullet objects]
+    'bullets': [],  # [Bullet objects]
+    'npcs': [],     # [NPC objects]
+    'boss': None    # Boss object or None
 }
 client_sockets = {}  # {player_id: socket}
 client_inputs = {}   # {player_id: {w, a, s, d, space}}
 lock = threading.Lock()
 next_player_id = 0
+next_npc_id = 0
 running = True
+last_npc_spawn = 0
+boss_spawned = False
 
 # Player colors
 COLORS = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'cyan', 'magenta']
+
+
+def get_total_score():
+    """Calculate total score of all players."""
+    return sum(p.score for p in game_state['players'].values())
+
+
+def find_nearest_player(x, y):
+    """Find the nearest player to the given position."""
+    nearest = None
+    min_dist = float('inf')
+
+    for player in game_state['players'].values():
+        dist = get_distance(x, y, player.x, player.y)
+        if dist < min_dist:
+            min_dist = dist
+            nearest = player
+
+    return nearest
+
+
+def spawn_npc():
+    """Spawn a new NPC at a random edge of the screen."""
+    global next_npc_id
+
+    if len(game_state['npcs']) >= MAX_NPCS:
+        return
+
+    # Spawn at random edge
+    edge = random.choice(['top', 'bottom', 'left', 'right'])
+    if edge == 'top':
+        x, y = random.randint(50, SCREEN_WIDTH - 50), 10
+    elif edge == 'bottom':
+        x, y = random.randint(50, SCREEN_WIDTH - 50), SCREEN_HEIGHT - 10
+    elif edge == 'left':
+        x, y = 10, random.randint(50, SCREEN_HEIGHT - 50)
+    else:
+        x, y = SCREEN_WIDTH - 10, random.randint(50, SCREEN_HEIGHT - 50)
+
+    npc = NPC(x, y, next_npc_id)
+    game_state['npcs'].append(npc)
+    next_npc_id += 1
+    print(f"NPC {npc.npc_id} spawned at ({x:.0f}, {y:.0f})")
+
+
+def spawn_boss():
+    """Spawn the boss at the center top of the screen."""
+    global boss_spawned
+
+    if game_state['boss'] is not None or boss_spawned:
+        return
+
+    boss = Boss(SCREEN_WIDTH // 2, 50, 999)
+    game_state['boss'] = boss
+    boss_spawned = True
+    print("=" * 40)
+    print("  BOSS HAS SPAWNED!")
+    print("=" * 40)
+
+
+def handle_collisions():
+    """Handle all collision logic."""
+    bullets_to_remove = []
+
+    for bullet in game_state['bullets']:
+        # Bullet vs Player collision
+        for player_id, player in game_state['players'].items():
+            # Don't hit yourself
+            if bullet.owner_id == player_id:
+                continue
+            # Also don't hit if owner is 'npc' or 'boss' and target is NPC/Boss
+            if check_collision(bullet, player):
+                is_dead = player.take_damage(bullet.damage)
+                bullets_to_remove.append(bullet)
+                print(f"Player {player_id} hit! HP: {player.hp}")
+
+                if is_dead:
+                    # Respawn player and reset score
+                    spawn_x = random.randint(100, SCREEN_WIDTH - 100)
+                    spawn_y = random.randint(100, SCREEN_HEIGHT - 100)
+                    player.respawn(spawn_x, spawn_y)
+                    print(f"Player {player_id} died and respawned!")
+                break
+
+        # Bullet vs NPC collision
+        for npc in game_state['npcs'][:]:
+            if bullet in bullets_to_remove:
+                break
+            if check_collision(bullet, npc):
+                is_dead = npc.take_damage(bullet.damage)
+                bullets_to_remove.append(bullet)
+
+                if is_dead:
+                    game_state['npcs'].remove(npc)
+                    # Give score to shooter if it's a player
+                    if bullet.owner_id in game_state['players']:
+                        game_state['players'][bullet.owner_id].score += 1
+                        print(f"Player {bullet.owner_id} killed NPC! Score: {game_state['players'][bullet.owner_id].score}")
+                break
+
+        # Bullet vs Boss collision
+        if game_state['boss'] is not None and bullet not in bullets_to_remove:
+            if check_collision(bullet, game_state['boss']):
+                is_dead = game_state['boss'].take_damage(bullet.damage)
+                bullets_to_remove.append(bullet)
+
+                if is_dead:
+                    # Give score to shooter
+                    if bullet.owner_id in game_state['players']:
+                        game_state['players'][bullet.owner_id].score += 5
+                        print(f"Player {bullet.owner_id} killed the BOSS! +5 Score!")
+                    game_state['boss'] = None
+                    print("BOSS DEFEATED!")
+
+    # Remove hit bullets
+    for bullet in bullets_to_remove:
+        if bullet in game_state['bullets']:
+            game_state['bullets'].remove(bullet)
 
 
 def handle_client(client_socket, player_id):
@@ -67,7 +196,8 @@ def handle_client(client_socket, player_id):
                             shoot_now = inputs.get('space', False)
                             if shoot_now and not last_shoot and player_id in game_state['players']:
                                 player = game_state['players'][player_id]
-                                bullet = Bullet(player.x, player.y, player.angle)
+                                # Pass owner_id so players don't shoot themselves
+                                bullet = Bullet(player.x, player.y, player.angle, owner_id=player_id)
                                 game_state['bullets'].append(bullet)
                             last_shoot = shoot_now
                     except json.JSONDecodeError:
@@ -96,12 +226,25 @@ def handle_client(client_socket, player_id):
 
 
 def game_loop():
-    """Game Loop running at 60 FPS: Update players/bullets, remove out-of-bound bullets."""
+    """Game Loop running at 60 FPS with spawning and collision logic."""
+    global last_npc_spawn
+
     while running:
         start_time = time.time()
 
         with lock:
-            # Update all players based on inputs
+            # === SPAWNING LOGIC ===
+            # Spawn NPC every 5 seconds (max 5 NPCs)
+            if len(game_state['players']) > 0:
+                if time.time() - last_npc_spawn > NPC_SPAWN_INTERVAL:
+                    spawn_npc()
+                    last_npc_spawn = time.time()
+
+                # Spawn Boss when total score > 10
+                if get_total_score() >= BOSS_SCORE_THRESHOLD:
+                    spawn_boss()
+
+            # === UPDATE PLAYERS ===
             for player_id, player in game_state['players'].items():
                 inputs = client_inputs.get(player_id, {})
                 player.move(inputs)
@@ -110,7 +253,27 @@ def game_loop():
                 player.x = player.x % SCREEN_WIDTH
                 player.y = player.y % SCREEN_HEIGHT
 
-            # Update all bullets
+            # === UPDATE NPCs (move towards nearest player) ===
+            for npc in game_state['npcs']:
+                nearest = find_nearest_player(npc.x, npc.y)
+                if nearest:
+                    npc.move_towards_target(nearest.x, nearest.y)
+
+                # Keep NPCs on screen
+                npc.x = max(10, min(SCREEN_WIDTH - 10, npc.x))
+                npc.y = max(10, min(SCREEN_HEIGHT - 10, npc.y))
+
+            # === UPDATE BOSS (move towards nearest player) ===
+            if game_state['boss'] is not None:
+                nearest = find_nearest_player(game_state['boss'].x, game_state['boss'].y)
+                if nearest:
+                    game_state['boss'].move_towards_target(nearest.x, nearest.y)
+
+                # Keep Boss on screen
+                game_state['boss'].x = max(50, min(SCREEN_WIDTH - 50, game_state['boss'].x))
+                game_state['boss'].y = max(50, min(SCREEN_HEIGHT - 50, game_state['boss'].y))
+
+            # === UPDATE BULLETS ===
             for bullet in game_state['bullets']:
                 bullet.move()
 
@@ -120,7 +283,10 @@ def game_loop():
                 if not b.is_out_of_bounds(SCREEN_WIDTH, SCREEN_HEIGHT)
             ]
 
-            # Prepare broadcast game_state dict
+            # === COLLISION LOGIC ===
+            handle_collisions()
+
+            # === PREPARE BROADCAST STATE ===
             broadcast_state = {
                 'type': 'state',
                 'players': {
@@ -128,7 +294,11 @@ def game_loop():
                 },
                 'bullets': [
                     (b.x, b.y, b.angle) for b in game_state['bullets']
-                ]
+                ],
+                'npcs': [
+                    npc.get_state() for npc in game_state['npcs']
+                ],
+                'boss': game_state['boss'].get_state() if game_state['boss'] else None
             }
 
             # Broadcast to all clients
@@ -152,8 +322,8 @@ def game_loop():
 
 
 def start_server():
-    """Setup TCP Socket server on 0.0.0.0:21001."""
-    global next_player_id, running
+    """Setup TCP Socket server."""
+    global next_player_id, running, last_npc_spawn
 
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -161,10 +331,15 @@ def start_server():
     server_socket.listen(8)
     server_socket.settimeout(1.0)
 
+    last_npc_spawn = time.time()
+
     print("=" * 40)
     print("  MULTIPLAYER DOGFIGHT SERVER")
+    print("  With NPCs and Boss!")
     print("=" * 40)
     print(f"Server started on {HOST}:{PORT}")
+    print(f"NPC spawn interval: {NPC_SPAWN_INTERVAL}s (max {MAX_NPCS})")
+    print(f"Boss spawns at total score: {BOSS_SCORE_THRESHOLD}")
     print("Waiting for players...")
     print()
 
