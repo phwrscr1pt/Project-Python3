@@ -1,4 +1,5 @@
 import math
+import random
 
 
 class Player:
@@ -79,20 +80,39 @@ class NPC:
         self.x = x
         self.y = y
         self.npc_id = npc_id
-        self.angle = 0
-        self.speed = 2  # Slower than players
+        self.angle = random.uniform(0, 360)  # Random starting angle
+        self.speed = random.uniform(2.0, 4.0)  # Randomize speed so NPCs don't stack
+        self.turn_speed = 3  # Degrees per frame for smooth turning
         self.hp = 30
         self.max_hp = 30
         self.color = 'npc'  # Blue color identifier
 
     def move_towards_target(self, target_x, target_y):
-        """Move automatically towards the target (nearest player)."""
-        # Calculate angle to target
+        """Move automatically towards the target with smooth turning."""
+        # Calculate target angle to player using atan2
         dx = target_x - self.x
         dy = target_y - self.y
-        self.angle = math.degrees(math.atan2(dy, dx))
+        target_angle = math.degrees(math.atan2(dy, dx))
 
-        # Move towards target
+        # Calculate difference between current angle and target angle
+        angle_diff = target_angle - self.angle
+
+        # Normalize the difference to be between -180 and 180
+        while angle_diff > 180:
+            angle_diff -= 360
+        while angle_diff < -180:
+            angle_diff += 360
+
+        # Gradually turn towards target angle by turn_speed
+        if angle_diff > 0:
+            self.angle += min(self.turn_speed, angle_diff)
+        elif angle_diff < 0:
+            self.angle += max(-self.turn_speed, angle_diff)
+
+        # Keep angle in 0-360 range
+        self.angle = self.angle % 360
+
+        # Move forward in current facing direction
         angle_rad = math.radians(self.angle)
         self.x += math.cos(angle_rad) * self.speed
         self.y += math.sin(angle_rad) * self.speed
@@ -114,18 +134,10 @@ class Boss(NPC):
         self.hp = 500
         self.max_hp = 500
         self.speed = 1.5  # Slower speed
+        self.turn_speed = 1  # Slower turn speed - feels heavy and big
         self.color = 'boss'  # Purple color identifier
         self.shoot_cooldown = 0
-
-    def move_towards_target(self, target_x, target_y):
-        """Boss moves slower but more deliberately."""
-        dx = target_x - self.x
-        dy = target_y - self.y
-        self.angle = math.degrees(math.atan2(dy, dx))
-
-        angle_rad = math.radians(self.angle)
-        self.x += math.cos(angle_rad) * self.speed
-        self.y += math.sin(angle_rad) * self.speed
+    # Boss inherits smooth turning from NPC.move_towards_target()
 
 
 def check_collision(entity1, entity2):

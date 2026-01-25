@@ -5,7 +5,7 @@ from client_renderer import GameRenderer
 
 # Configuration
 HOST = 'localhost'
-PORT = 21001
+PORT = 9999
 
 # Game state (shared between threads)
 game_state = {'players': {}, 'bullets': []}
