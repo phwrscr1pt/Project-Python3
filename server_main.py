@@ -158,7 +158,7 @@ def start_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((HOST, PORT))
-    server_socket.listen(😎
+    server_socket.listen(8)
     server_socket.settimeout(1.0)
 
     print("=" * 40)
