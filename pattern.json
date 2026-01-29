@@ -1,4 +1,0 @@
-{
-    "expression": "50 * math.sin(x / 15)",
-    "name": "circle"
-}
