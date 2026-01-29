@@ -72,6 +72,48 @@ class Bullet:
         return self.x < 0 or self.x > width or self.y < 0 or self.y > height
 
 
+class MathBullet:
+    """Bullet that follows a math expression path (AI-generated pattern).
+    The waveform offset is applied perpendicular to the direction of travel,
+    so it works correctly at any firing angle."""
+    HITBOX_RADIUS = 5
+
+    def __init__(self, x, y, angle, owner_id, expression, speed=12, damage=10):
+        self.x = x
+        self.y = y
+        self.angle = angle
+        self.speed = speed
+        self.owner_id = owner_id
+        self.damage = damage
+        self.expression = expression
+        self.t = 0  # Time variable for expression evaluation
+
+    def move(self):
+        # Increment time
+        self.t += 1
+
+        angle_rad = math.radians(self.angle)
+        perp_rad = angle_rad + math.pi / 2  # 90 degrees perpendicular
+
+        # Move forward along the firing angle
+        self.x += math.cos(angle_rad) * self.speed
+        self.y += math.sin(angle_rad) * self.speed
+
+        # Calculate waveform offset and apply perpendicular to travel direction
+        try:
+            local_y = eval(self.expression, {"__builtins__": {}, "math": math, "x": self.t})
+            self.x += local_y * math.cos(perp_rad)
+            self.y += local_y * math.sin(perp_rad)
+        except Exception:
+            pass  # Fallback: straight line (no offset)
+
+    def is_out_of_bounds(self, width, height):
+        return self.x < 0 or self.x > width or self.y < 0 or self.y > height
+
+    def get_state(self):
+        return (self.x, self.y, self.angle, self.owner_id)
+
+
 class NPC:
     """NPC class that moves automatically towards the nearest player."""
     HITBOX_RADIUS = 10  # Smaller hitbox

@@ -3,7 +3,8 @@ import threading
 import json
 import time
 import random
-from game_objects import Player, Bullet, NPC, Boss, check_collision, get_distance
+import os
+from game_objects import Player, Bullet, MathBullet, NPC, Boss, check_collision, get_distance
 
 # Server configuration
 HOST = '0.0.0.0'
@@ -34,6 +35,11 @@ next_npc_id = 0
 running = True
 last_npc_spawn = 0
 boss_spawned = False
+
+# Bullet pattern configuration
+PATTERN_FILE = "pattern.json"
+DEFAULT_EXPRESSION = "50 * math.sin(x / 10)"
+current_expression = DEFAULT_EXPRESSION
 
 # Player colors
 COLORS = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'cyan', 'magenta']
@@ -66,6 +72,21 @@ def find_nearest_player(x, y):
             nearest = player
 
     return nearest
+
+
+def load_pattern():
+    """Load bullet pattern expression from pattern.json (written by web app)."""
+    global current_expression
+    try:
+        if os.path.exists(PATTERN_FILE):
+            with open(PATTERN_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            expr = data.get('expression', DEFAULT_EXPRESSION)
+            if expr != current_expression:
+                current_expression = expr
+                print(f"Loaded new bullet pattern: {data.get('name', '?')} -> {expr}")
+    except Exception as e:
+        print(f"Error loading pattern.json: {e}")
 
 
 def spawn_npc():
@@ -269,12 +290,16 @@ def handle_client(client_socket, player_id):
                         with lock:
                             client_inputs[player_id] = inputs
 
-                            # Handle Space input to spawn bullet
+                            # Handle Space input to spawn MathBullet
                             shoot_now = inputs.get('space', False)
                             if shoot_now and not last_shoot and player_id in game_state['players']:
                                 player = game_state['players'][player_id]
-                                # Pass owner_id so players don't shoot themselves
-                                bullet = Bullet(player.x, player.y, player.angle, owner_id=player_id)
+                                load_pattern()
+                                bullet = MathBullet(
+                                    player.x, player.y, player.angle,
+                                    owner_id=player_id,
+                                    expression=current_expression
+                                )
                                 game_state['bullets'].append(bullet)
                             last_shoot = shoot_now
                     except json.JSONDecodeError:

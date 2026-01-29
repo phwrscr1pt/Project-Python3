@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Boss Pattern Admin</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .result-box { background-color: #f0f8ff; padding: 20px; border-radius: 8px; margin-top: 20px; }
+        form { background-color: #eee; padding: 20px; border-radius: 8px; }
+        input { width: 100%; margin-bottom: 10px; padding: 8px; box-sizing: border-box; }
+        button { background-color: #e53935; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+        button:hover { background-color: #c62828; }
+        code { background-color: #263238; color: #80CBC4; padding: 4px 8px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<h1>Boss Bullet Pattern Admin</h1>
+<p>Describe a bullet pattern and AI will generate the math expression for the Boss.</p>
+
+<form method="POST" action="/admin">
+    <label>Pattern Description:</label>
+    <input type="text" name="pattern_name" required placeholder="e.g. sine wave, spiral, zigzag">
+
+    <button type="submit">Generate Pattern</button>
+</form>
+
+{% if result %}
+    <div class="result-box">
+        <h3>{{ result }}</h3>
+        {% if expression %}
+        <p>Expression: <code>{{ expression }}</code></p>
+        {% endif %}
+    </div>
+{% endif %}
+
+</body>
+</html>
