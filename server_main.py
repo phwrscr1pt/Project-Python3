@@ -17,7 +17,6 @@ SCREEN_HEIGHT = 600
 # Spawning configuration
 MAX_NPCS = 5
 NPC_SPAWN_INTERVAL = 5  # seconds
-BOSS_SCORE_THRESHOLD = 10
 
 # Game state
 game_state = {
@@ -34,7 +33,10 @@ next_player_id = 0
 next_npc_id = 0
 running = True
 last_npc_spawn = 0
-boss_spawned = False
+
+# Boss / checkpoint progression
+boss_level = 1          # Next boss is level 1 (threshold = 10*level)
+checkpoint_score = 0    # Server-wide checkpoint restored on player death
 
 # Bullet pattern configuration
 PATTERN_FILE = "pattern.json"
@@ -114,17 +116,16 @@ def spawn_npc():
 
 
 def spawn_boss():
-    """Spawn the boss at the center top of the screen."""
-    global boss_spawned
-
-    if game_state['boss'] is not None or boss_spawned:
+    """Spawn the boss at the center top of the screen.
+    Uses boss_level to scale HP (500 * 2^(level-1)).
+    """
+    if game_state['boss'] is not None:
         return
 
-    boss = Boss(SCREEN_WIDTH // 2, 50, 999)
+    boss = Boss(SCREEN_WIDTH // 2, 50, 999, level=boss_level)
     game_state['boss'] = boss
-    boss_spawned = True
     print("=" * 40)
-    print("  BOSS HAS SPAWNED!")
+    print(f"  BOSS LEVEL {boss_level} HAS SPAWNED!  (HP: {boss.max_hp})")
     print("=" * 40)
 
 
@@ -188,6 +189,7 @@ def handle_body_collisions():
 
 def handle_collisions():
     """Handle all bullet collision logic with explosion events."""
+    global boss_level, checkpoint_score
     bullets_to_remove = []
 
     for bullet in game_state['bullets']:
@@ -246,7 +248,13 @@ def handle_collisions():
                         game_state['players'][bullet.owner_id].score += 5
                         print(f"Player {bullet.owner_id} killed the BOSS! +5 Score!")
                     game_state['boss'] = None
-                    print("BOSS DEFEATED!")
+
+                    # Advance checkpoint to the threshold we just cleared
+                    checkpoint_score = 10 * boss_level
+                    for p in game_state['players'].values():
+                        p.checkpoint_score = checkpoint_score
+                    print(f"BOSS LEVEL {boss_level} DEFEATED! Checkpoint updated to {checkpoint_score}.")
+                    boss_level += 1
 
     # Remove hit bullets
     for bullet in bullets_to_remove:
@@ -339,15 +347,18 @@ def game_loop():
             frame_events = []
 
             # === SPAWNING LOGIC ===
-            # Spawn NPC every 5 seconds (max 5 NPCs)
             if len(game_state['players']) > 0:
-                if time.time() - last_npc_spawn > NPC_SPAWN_INTERVAL:
-                    spawn_npc()
-                    last_npc_spawn = time.time()
+                total = get_total_score()
+                boss_threshold = 10 * boss_level  # 10, 20, 30, ...
 
-                # Spawn Boss when total score >= 10
-                if get_total_score() >= BOSS_SCORE_THRESHOLD:
+                if total >= boss_threshold and game_state['boss'] is None:
                     spawn_boss()
+
+                # Solo Boss: only spawn NPCs when boss is NOT active
+                if game_state['boss'] is None:
+                    if time.time() - last_npc_spawn > NPC_SPAWN_INTERVAL:
+                        spawn_npc()
+                        last_npc_spawn = time.time()
 
             # === UPDATE PLAYERS ===
             for player_id, player in game_state['players'].items():
@@ -462,7 +473,7 @@ def start_server():
     print("=" * 40)
     print(f"Server started on {HOST}:{PORT}")
     print(f"NPC spawn interval: {NPC_SPAWN_INTERVAL}s (max {MAX_NPCS})")
-    print(f"Boss spawns at total score: {BOSS_SCORE_THRESHOLD}")
+    print(f"Boss spawns at total score thresholds: 10, 20, 30, ...")
     print("Waiting for players...")
     print()
 
@@ -483,7 +494,10 @@ def start_server():
                 color = COLORS[player_id % len(COLORS)]
 
                 with lock:
-                    game_state['players'][player_id] = Player(spawn_x, spawn_y, color)
+                    player = Player(spawn_x, spawn_y, color)
+                    player.checkpoint_score = checkpoint_score
+                    player.score = checkpoint_score
+                    game_state['players'][player_id] = player
                     client_sockets[player_id] = client_socket
                     client_inputs[player_id] = {}
 

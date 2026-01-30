@@ -46,14 +46,14 @@ def receive_data(sock):
             break
 
 
-def main():
-    """Client Runner: Connect, loop, send actions, receive state, render."""
-    global connected
+def connect_to_server():
+    """Create a socket connection to the server and start the receive thread.
+    Returns the socket on success, or None on failure."""
+    global connected, my_player_id, game_state
 
-    # Initialize renderer
-    renderer = GameRenderer()
+    my_player_id = None
+    game_state = {'players': {}, 'bullets': []}
 
-    # Connect to localhost:21001
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((HOST, PORT))
@@ -62,45 +62,72 @@ def main():
     except Exception as e:
         print(f"Failed to connect to server: {e}")
         print("Make sure the server is running: python server_main.py")
+        return None
+
+    receive_thread = threading.Thread(target=receive_data, args=(sock,), daemon=True)
+    receive_thread.start()
+    return sock
+
+
+# Empty input sent while paused so the player doesn't move
+EMPTY_INPUT = json.dumps({'w': False, 's': False, 'a': False, 'd': False, 'space': False}) + '\n'
+
+
+def main():
+    """Client Runner: Connect, loop, send actions, receive state, render."""
+    global connected
+
+    renderer = GameRenderer()
+    sock = connect_to_server()
+    if sock is None:
         renderer.quit()
         return
 
-    # Start receive thread
-    receive_thread = threading.Thread(target=receive_data, args=(sock,), daemon=True)
-    receive_thread.start()
-
-    # Main game loop
     running = True
     while running and connected:
-        # Handle pygame events (quit, etc.)
-        if not renderer.handle_events():
+        action = renderer.handle_events()
+        if action == 'quit':
             running = False
             break
+        if action == 'reset':
+            # Close current connection and reconnect
+            connected = False
+            try:
+                sock.close()
+            except Exception:
+                pass
+            sock = connect_to_server()
+            if sock is None:
+                running = False
+                break
+            continue
 
-        # Get keys (WASD + Space)
-        inputs = renderer.get_inputs()
+        # When paused, send empty input so the player stands still
+        if renderer.paused:
+            try:
+                sock.send(EMPTY_INPUT.encode())
+            except Exception:
+                running = False
+                break
+        else:
+            inputs = renderer.get_inputs()
+            try:
+                sock.send((json.dumps(inputs) + '\n').encode())
+            except Exception as e:
+                print(f"Send error: {e}")
+                running = False
+                break
 
-        # Send actions to server
-        try:
-            sock.send((json.dumps(inputs) + '\n').encode())
-        except Exception as e:
-            print(f"Send error: {e}")
-            running = False
-            break
-
-        # Receive state (handled by background thread)
-        # Get current state safely
         with lock:
             current_state = game_state.copy()
 
-        # Call renderer.draw(state)
         renderer.draw(current_state, my_player_id)
 
     # Cleanup
     connected = False
     try:
         sock.close()
-    except:
+    except Exception:
         pass
     renderer.quit()
     print("Game closed")

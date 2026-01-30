@@ -84,6 +84,11 @@ class GameRenderer:
         self.shake_intensity = 0
         self.shake_duration = 0
 
+        # Pause menu state
+        self.paused = False
+        self.pause_snapshot = None  # Frozen HUD values while paused
+        self.overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+
     def create_explosion(self, x, y, color, count=15):
         """Spawn particles for explosion effect."""
         rgb_color = COLORS.get(color, WHITE)
@@ -248,8 +253,8 @@ class GameRenderer:
             pygame.draw.circle(self.screen, WHITE, (draw_x, draw_y), 2)
 
     def draw(self, game_state, my_id):
-        """Main draw method with particles and screen shake."""
-        # Update particles
+        """Main draw method with particles, screen shake, and pause overlay."""
+        # Update particles (even while paused so existing explosions fade out)
         self.update_particles()
 
         # Get screen shake offset
@@ -313,8 +318,24 @@ class GameRenderer:
         # Draw particles on top
         self.draw_particles(offset_x, offset_y)
 
-        # Draw HUD (no shake for HUD)
-        self.draw_hud(my_id, len(players), my_score, my_hp, my_max_hp, len(npcs), boss_data is not None)
+        # --- HUD: use snapshot values while paused so bars don't jump ---
+        if self.paused:
+            if self.pause_snapshot is None:
+                self.pause_snapshot = {
+                    'score': my_score,
+                    'hp': my_hp,
+                    'max_hp': my_max_hp,
+                    'npc_count': len(npcs),
+                    'player_count': len(players),
+                    'boss_alive': boss_data is not None,
+                }
+            snap = self.pause_snapshot
+            self.draw_hud(my_id, snap['player_count'], snap['score'],
+                          snap['hp'], snap['max_hp'], snap['npc_count'], snap['boss_alive'])
+            self.draw_pause_overlay()
+        else:
+            self.pause_snapshot = None
+            self.draw_hud(my_id, len(players), my_score, my_hp, my_max_hp, len(npcs), boss_data is not None)
 
         # Update display
         pygame.display.flip()
@@ -350,25 +371,64 @@ class GameRenderer:
         count = self.font.render(f"Players: {player_count}", True, WHITE)
         self.screen.blit(count, (SCREEN_WIDTH - 100, 35))
 
-        controls = "W/S: Speed | A/D: Turn | SPACE: Shoot | Kill NPCs to score!"
+        controls = "W/S/Arrows: Move | SPACE: Shoot | ESC: Pause"
         help_text = self.font.render(controls, True, (150, 150, 150))
-        self.screen.blit(help_text, (SCREEN_WIDTH // 2 - 220, SCREEN_HEIGHT - 25))
+        self.screen.blit(help_text, (SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT - 25))
+
+    def draw_pause_overlay(self):
+        """Draw a semi-transparent overlay with pause menu options."""
+        self.overlay.fill((0, 0, 0, 150))
+        self.screen.blit(self.overlay, (0, 0))
+
+        title = self.title_font.render("PAUSED", True, WHITE)
+        self.screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 200))
+
+        options = [
+            ("C :  Continue", (100, 255, 100)),
+            ("R :  Reset", (255, 255, 100)),
+            ("Q :  Quit", (255, 100, 100)),
+        ]
+        for i, (text, color) in enumerate(options):
+            label = self.score_font.render(text, True, color)
+            self.screen.blit(label, (SCREEN_WIDTH // 2 - label.get_width() // 2, 270 + i * 45))
 
     def handle_events(self):
-        """Process pygame events. Returns False if quit requested."""
+        """Process pygame events. Returns a string action:
+        'quit'     – close the application
+        'reset'    – reconnect to the server
+        'continue' – keep running normally
+        """
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return False
-        return True
+                return 'quit'
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.paused = not self.paused
+                    if self.paused:
+                        # Snapshot HUD values so they freeze while paused
+                        self.pause_snapshot = None  # will be captured in draw()
+                if self.paused:
+                    if event.key == pygame.K_c:
+                        self.paused = False
+                    elif event.key == pygame.K_q:
+                        return 'quit'
+                    elif event.key == pygame.K_r:
+                        self.paused = False
+                        return 'reset'
+        return 'continue'
 
     def get_inputs(self):
-        """Get current keyboard state for WASD + Space."""
+        """Get current keyboard state for WASD + Arrow Keys + Space.
+
+        Arrow Keys are mapped as alternatives to WASD so the game works
+        when the OS keyboard layout is set to a non-Latin script (e.g. Thai).
+        """
         keys = pygame.key.get_pressed()
         return {
-            'w': keys[pygame.K_w],
-            's': keys[pygame.K_s],
-            'a': keys[pygame.K_a],
-            'd': keys[pygame.K_d],
+            'w': keys[pygame.K_w] or keys[pygame.K_UP],
+            's': keys[pygame.K_s] or keys[pygame.K_DOWN],
+            'a': keys[pygame.K_a] or keys[pygame.K_LEFT],
+            'd': keys[pygame.K_d] or keys[pygame.K_RIGHT],
             'space': keys[pygame.K_SPACE]
         }
 

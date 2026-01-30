@@ -14,6 +14,7 @@ class Player:
         self.hp = 100
         self.max_hp = 100
         self.score = 0
+        self.checkpoint_score = 0  # Restored on death instead of 0
 
     def move(self, inputs):
         # Rotation
@@ -46,7 +47,7 @@ class Player:
         self.y = y
         self.hp = self.max_hp
         self.speed = 0
-        self.score = 0
+        self.score = self.checkpoint_score
 
     def get_state(self):
         return (self.x, self.y, self.angle, self.color, self.hp, self.max_hp, self.score)
@@ -168,17 +169,24 @@ class NPC:
 
 
 class Boss(NPC):
-    """Boss class - larger, slower, more HP than NPC."""
-    HITBOX_RADIUS = 25  # Smaller but still larger than players
-    ATTACK_INTERVAL = 120  # Frames (2 seconds at 60 FPS)
+    """Boss class - larger, slower, more HP than NPC.
 
-    def __init__(self, x, y, boss_id):
+    HP scales by level: 500 * 2^(level-1)  ->  500, 1000, 2000, ...
+    Moves very slowly (creeping) towards the nearest player.
+    Low fire rate but high damage.
+    """
+    HITBOX_RADIUS = 25  # Smaller but still larger than players
+    ATTACK_INTERVAL = 150  # Frames (~2.5 seconds at 60 FPS) - low fire rate
+
+    def __init__(self, x, y, boss_id, level=1):
         super().__init__(x, y, boss_id)
-        self.hp = 500
-        self.max_hp = 500
-        self.speed = 1.5  # Slower speed
-        self.turn_speed = 1  # Slower turn speed - feels heavy and big
-        self.color = 'boss'  # Purple color identifier
+        self.level = level
+        base_hp = 500 * (2 ** (level - 1))  # 500 -> 1000 -> 2000 ...
+        self.hp = base_hp
+        self.max_hp = base_hp
+        self.speed = 0.6  # Very slow creeping speed
+        self.turn_speed = 0.8  # Slow turn - feels heavy and menacing
+        self.color = 'boss'
         self.shoot_cooldown = 0
 
     def update_attack(self):
@@ -190,7 +198,7 @@ class Boss(NPC):
         return False
 
     def get_attack_bullets(self):
-        """Fire 8 bullets in all directions (turret pattern)."""
+        """Fire 8 bullets in all directions (turret pattern) with high damage."""
         bullets = []
         for angle in range(0, 360, 45):  # 0, 45, 90, 135, 180, 225, 270, 315
             bullets.append({
@@ -198,8 +206,8 @@ class Boss(NPC):
                 'y': self.y,
                 'angle': angle,
                 'owner_id': 'boss',
-                'speed': 6,
-                'damage': 15
+                'speed': 5,
+                'damage': 25  # High damage per hit
             })
         return bullets
     # Boss inherits smooth turning from NPC.move_towards_target()
