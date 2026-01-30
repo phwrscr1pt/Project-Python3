@@ -19,16 +19,16 @@
 
 <form method="POST" action="/admin">
     <label>Pattern Description:</label>
-    <input type="text" name="pattern_name" required placeholder="e.g. sine wave, spiral, zigzag">
+    <input type="text" name="pattern" required placeholder="Sine wave">
 
     <button type="submit">Generate Pattern</button>
 </form>
 
-{% if result %}
+{% if success_message %}
     <div class="result-box">
-        <h3>{{ result }}</h3>
-        {% if expression %}
-        <p>Expression: <code>{{ expression }}</code></p>
+        <h3>{{ success_message }}</h3>
+        {% if generated_expr %}
+        <p>Expression: <code>{{ generated_expr }}</code></p>
         {% endif %}
     </div>
 {% endif %}

@@ -1,4 +1,5 @@
 import json
+import os
 import logging
 from flask import Flask, render_template, request
 from calcs import convert_request_to_expression
@@ -11,32 +12,36 @@ logging.basicConfig(
 
 app = Flask(__name__)
 
-PATTERN_FILE = "pattern.json"
+PATTERN_FILE = os.path.join(os.path.dirname(__file__), "pattern.json")
 
 
-@app.route("/admin", methods=['GET', 'POST'])
+@app.route("/admin", methods=["GET", "POST"])
 def admin_page():
-    result_text = ""
-    expression = ""
+    success_message = ""
+    generated_expr = ""
 
-    if request.method == 'POST':
-        pattern_name = request.form.get('pattern_name', '').strip()
+    if request.method == "POST":
+        pattern = request.form.get("pattern", "").strip()
 
-        if pattern_name:
-            expression = convert_request_to_expression(pattern_name)
+        if pattern:
+            generated_expr = convert_request_to_expression(pattern)
 
             pattern_data = {
-                "expression": expression,
-                "name": pattern_name
+                "name": pattern,
+                "expression": generated_expr,
             }
-            with open(PATTERN_FILE, 'w', encoding='utf-8') as f:
+            with open(PATTERN_FILE, "w", encoding="utf-8") as f:
                 json.dump(pattern_data, f, indent=4)
 
-            result_text = f"Pattern '{pattern_name}' saved successfully!"
-            logging.info(f"Admin set bullet pattern: {pattern_name} -> {expression}")
+            success_message = f"Pattern '{pattern}' saved successfully!"
+            logging.info(f"Admin set bullet pattern: {pattern} -> {generated_expr}")
 
-    return render_template('admin.html', result=result_text, expression=expression)
+    return render_template(
+        "admin.html",
+        success_message=success_message,
+        generated_expr=generated_expr,
+    )
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(port=5000, debug=True)
